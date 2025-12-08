@@ -22,7 +22,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use tracing::{debug, instrument};
 
-use crate::core::{profiles_api_url, PROFILES_API_BASE};
+use crate::core::profiles_api_url;
 use crate::core::{PolymarketError, Result};
 use crate::types::{LeaderboardEntry, TraderProfile};
 
@@ -40,7 +40,8 @@ pub struct ProfilesConfig {
 impl Default for ProfilesConfig {
     fn default() -> Self {
         Self {
-            base_url: PROFILES_API_BASE.to_string(),
+            // Use helper function to support env var override (POLYMARKET_PROFILES_URL)
+            base_url: profiles_api_url(),
             timeout: Duration::from_secs(30),
             user_agent: "polymarket-sdk/0.1.0".to_string(),
         }
@@ -68,19 +69,24 @@ impl ProfilesConfig {
         self
     }
 
-    /// Create config from environment variables
+    /// Set user agent string
     #[must_use]
+    pub fn with_user_agent(mut self, user_agent: impl Into<String>) -> Self {
+        self.user_agent = user_agent.into();
+        self
+    }
+
+    /// Create config from environment variables.
+    ///
+    /// **Deprecated**: Use `ProfilesConfig::default()` instead.
+    /// The default implementation already supports `POLYMARKET_PROFILES_URL` env var override.
+    #[must_use]
+    #[deprecated(
+        since = "0.1.0",
+        note = "Use ProfilesConfig::default() instead. URL override via POLYMARKET_PROFILES_URL env var is already supported."
+    )]
     pub fn from_env() -> Self {
-        Self {
-            base_url: profiles_api_url(),
-            timeout: std::env::var("PROFILES_TIMEOUT_SECS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .map(Duration::from_secs)
-                .unwrap_or(Duration::from_secs(30)),
-            user_agent: std::env::var("PROFILES_USER_AGENT")
-                .unwrap_or_else(|_| "polymarket-sdk/0.1.0".to_string()),
-        }
+        Self::default()
     }
 }
 
@@ -109,7 +115,11 @@ impl ProfilesClient {
         Self::new(ProfilesConfig::default())
     }
 
-    /// Create client from environment variables
+    /// Create client from environment variables.
+    ///
+    /// **Deprecated**: Use `ProfilesClient::with_defaults()` instead.
+    #[deprecated(since = "0.1.0", note = "Use ProfilesClient::with_defaults() instead")]
+    #[allow(deprecated)]
     pub fn from_env() -> Result<Self> {
         Self::new(ProfilesConfig::from_env())
     }

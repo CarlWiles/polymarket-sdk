@@ -26,7 +26,7 @@ use serde::Deserialize;
 use tracing::{debug, info, instrument};
 use url::Url;
 
-use crate::core::{gamma_api_url, GAMMA_API_BASE};
+use crate::core::gamma_api_url;
 use crate::core::{PolymarketError, Result};
 use crate::types::{Event, ListParams, Market, Tag};
 
@@ -44,7 +44,8 @@ pub struct GammaConfig {
 impl Default for GammaConfig {
     fn default() -> Self {
         Self {
-            base_url: GAMMA_API_BASE.to_string(),
+            // Use helper function to support env var override (POLYMARKET_GAMMA_URL)
+            base_url: gamma_api_url(),
             timeout: Duration::from_secs(30),
             user_agent: "polymarket-sdk/0.1.0".to_string(),
         }
@@ -72,19 +73,24 @@ impl GammaConfig {
         self
     }
 
-    /// Create config from environment variables
+    /// Set user agent string
     #[must_use]
+    pub fn with_user_agent(mut self, user_agent: impl Into<String>) -> Self {
+        self.user_agent = user_agent.into();
+        self
+    }
+
+    /// Create config from environment variables.
+    ///
+    /// **Deprecated**: Use `GammaConfig::default()` instead.
+    /// The default implementation already supports `POLYMARKET_GAMMA_URL` env var override.
+    #[must_use]
+    #[deprecated(
+        since = "0.1.0",
+        note = "Use GammaConfig::default() instead. URL override via POLYMARKET_GAMMA_URL env var is already supported."
+    )]
     pub fn from_env() -> Self {
-        Self {
-            base_url: gamma_api_url(),
-            timeout: std::env::var("GAMMA_TIMEOUT_SECS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .map(Duration::from_secs)
-                .unwrap_or(Duration::from_secs(30)),
-            user_agent: std::env::var("GAMMA_USER_AGENT")
-                .unwrap_or_else(|_| "polymarket-sdk/0.1.0".to_string()),
-        }
+        Self::default()
     }
 }
 
@@ -113,7 +119,11 @@ impl GammaClient {
         Self::new(GammaConfig::default())
     }
 
-    /// Create client from environment variables
+    /// Create client from environment variables.
+    ///
+    /// **Deprecated**: Use `GammaClient::with_defaults()` instead.
+    #[deprecated(since = "0.1.0", note = "Use GammaClient::with_defaults() instead")]
+    #[allow(deprecated)]
     pub fn from_env() -> Result<Self> {
         Self::new(GammaConfig::from_env())
     }

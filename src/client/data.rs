@@ -23,7 +23,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use tracing::{debug, instrument};
 
-use crate::core::{clob_api_url, data_api_url, CLOB_API_BASE, DATA_API_BASE};
+use crate::core::{clob_api_url, data_api_url};
 use crate::core::{PolymarketError, Result};
 use crate::types::{
     BiggestWinner, BiggestWinnersQuery, ClosedPosition, DataApiActivity, DataApiPosition,
@@ -46,8 +46,9 @@ pub struct DataConfig {
 impl Default for DataConfig {
     fn default() -> Self {
         Self {
-            base_url: DATA_API_BASE.to_string(),
-            clob_base_url: CLOB_API_BASE.to_string(),
+            // Use helper functions to support env var overrides
+            base_url: data_api_url(),
+            clob_base_url: clob_api_url(),
             timeout: Duration::from_secs(30),
             user_agent: "polymarket-sdk/0.1.0".to_string(),
         }
@@ -82,20 +83,25 @@ impl DataConfig {
         self
     }
 
-    /// Create config from environment variables
+    /// Set user agent string
     #[must_use]
+    pub fn with_user_agent(mut self, user_agent: impl Into<String>) -> Self {
+        self.user_agent = user_agent.into();
+        self
+    }
+
+    /// Create config from environment variables.
+    ///
+    /// **Deprecated**: Use `DataConfig::default()` instead.
+    /// The default implementation already supports env var overrides.
+    #[must_use]
+    #[deprecated(
+        since = "0.1.0",
+        note = "Use DataConfig::default() instead. URL overrides via \
+                POLYMARKET_DATA_URL and POLYMARKET_CLOB_URL env vars are already supported."
+    )]
     pub fn from_env() -> Self {
-        Self {
-            base_url: data_api_url(),
-            clob_base_url: clob_api_url(),
-            timeout: std::env::var("DATA_API_TIMEOUT_SECS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .map(Duration::from_secs)
-                .unwrap_or(Duration::from_secs(30)),
-            user_agent: std::env::var("DATA_API_USER_AGENT")
-                .unwrap_or_else(|_| "polymarket-sdk/0.1.0".to_string()),
-        }
+        Self::default()
     }
 }
 
@@ -124,7 +130,11 @@ impl DataClient {
         Self::new(DataConfig::default())
     }
 
-    /// Create client from environment variables
+    /// Create client from environment variables.
+    ///
+    /// **Deprecated**: Use `DataClient::with_defaults()` instead.
+    #[deprecated(since = "0.1.0", note = "Use DataClient::with_defaults() instead")]
+    #[allow(deprecated)]
     pub fn from_env() -> Result<Self> {
         Self::new(DataConfig::from_env())
     }

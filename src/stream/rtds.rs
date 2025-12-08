@@ -57,7 +57,7 @@ use tokio_tungstenite::{
 };
 use tracing::{debug, error, info, trace, warn};
 
-use crate::core::{rtds_wss_url, RTDS_WSS_BASE};
+use crate::core::rtds_wss_url;
 use crate::core::{PolymarketError, Result, StreamErrorKind};
 use crate::types::{ConnectionStats, Side};
 
@@ -773,7 +773,8 @@ pub struct RtdsConfig {
 impl Default for RtdsConfig {
     fn default() -> Self {
         Self {
-            host: RTDS_WSS_BASE.to_string(),
+            // Use helper function to support env var override (POLYMARKET_RTDS_URL)
+            host: rtds_wss_url(),
             topic: "activity".to_string(),
             msg_type: "*".to_string(),
             filters: None,
@@ -848,30 +849,36 @@ impl RtdsConfig {
         self
     }
 
-    /// Create config from environment variables
+    // =========================================================================
+    // Preset Configurations
+    // =========================================================================
+
+    /// Create config for subscribing to trades only.
+    ///
+    /// This is the most common configuration for trade activity monitoring.
     #[must_use]
+    pub fn for_trades() -> Self {
+        Self::default().with_msg_type("trades")
+    }
+
+    /// Create config for subscribing to all activity types.
+    #[must_use]
+    pub fn for_all_activity() -> Self {
+        Self::default() // msg_type defaults to "*"
+    }
+
+    /// Create config from environment variables.
+    ///
+    /// **Deprecated**: Use `RtdsConfig::default()` or `RtdsConfig::for_trades()` instead.
+    /// The default implementation already supports `POLYMARKET_RTDS_URL` env var override.
+    #[must_use]
+    #[deprecated(
+        since = "0.1.0",
+        note = "Use RtdsConfig::default() or RtdsConfig::for_trades() instead. \
+                URL override via POLYMARKET_RTDS_URL env var is already supported."
+    )]
     pub fn from_env() -> Self {
-        Self {
-            host: rtds_wss_url(),
-            topic: std::env::var("RTDS_TOPIC").unwrap_or_else(|_| "activity".to_string()),
-            msg_type: std::env::var("RTDS_TYPE").unwrap_or_else(|_| "*".to_string()),
-            filters: std::env::var("RTDS_FILTERS").ok().filter(|s| !s.is_empty()),
-            ping_interval_ms: std::env::var("RTDS_PING_INTERVAL_MS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(5000),
-            max_backoff_secs: std::env::var("RTDS_MAX_BACKOFF_SECS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(30),
-            auto_reconnect: std::env::var("RTDS_AUTO_RECONNECT")
-                .map(|v| v.to_lowercase() != "false")
-                .unwrap_or(true),
-            channel_buffer_size: std::env::var("RTDS_CHANNEL_BUFFER_SIZE")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(1000),
-        }
+        Self::default()
     }
 }
 
@@ -1104,14 +1111,27 @@ impl RtdsClient {
         }
     }
 
-    /// Create client with default configuration
+    /// Create client with default configuration (all activity types).
     #[must_use]
     pub fn with_defaults() -> Self {
         Self::new(RtdsConfig::default())
     }
 
-    /// Create client from environment variables
+    /// Create client for trades only (most common use case).
     #[must_use]
+    pub fn for_trades() -> Self {
+        Self::new(RtdsConfig::for_trades())
+    }
+
+    /// Create client from environment variables.
+    ///
+    /// **Deprecated**: Use `RtdsClient::for_trades()` or `RtdsClient::new(config)` instead.
+    #[must_use]
+    #[deprecated(
+        since = "0.1.0",
+        note = "Use RtdsClient::for_trades() or RtdsClient::new(RtdsConfig::default()) instead"
+    )]
+    #[allow(deprecated)]
     pub fn from_env() -> Self {
         Self::new(RtdsConfig::from_env())
     }
@@ -1369,10 +1389,31 @@ mod tests {
     }
 
     #[test]
-    fn test_rtds_config_from_env() {
-        let config = RtdsConfig::from_env();
-        assert!(!config.host.is_empty());
+    fn test_rtds_config_default() {
+        let config = RtdsConfig::default();
+        // URL uses helper function which may be overridden by env var
+        assert_eq!(config.host, rtds_wss_url());
+        assert_eq!(config.topic, "activity");
+        assert_eq!(config.msg_type, "*");
         assert!(config.ping_interval_ms > 0);
+    }
+
+    #[test]
+    fn test_rtds_config_for_trades() {
+        let config = RtdsConfig::for_trades();
+        assert_eq!(config.msg_type, "trades");
+        assert_eq!(config.topic, "activity");
+    }
+
+    #[test]
+    fn test_rtds_config_builder() {
+        let config = RtdsConfig::builder()
+            .with_topic("custom")
+            .with_msg_type("orders")
+            .with_ping_interval_ms(10000);
+        assert_eq!(config.topic, "custom");
+        assert_eq!(config.msg_type, "orders");
+        assert_eq!(config.ping_interval_ms, 10000);
     }
 
     #[test]

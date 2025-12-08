@@ -41,7 +41,7 @@ use crate::auth::{
     create_l1_headers, create_l2_headers, create_l2_headers_with_body_string,
     get_current_unix_time_secs,
 };
-use crate::core::{clob_api_url, CLOB_API_BASE};
+use crate::core::clob_api_url;
 use crate::core::{PolymarketError, Result};
 use crate::types::{ApiCredentials, SignedOrderRequest};
 
@@ -70,7 +70,8 @@ pub struct ClobConfig {
 impl Default for ClobConfig {
     fn default() -> Self {
         Self {
-            base_url: CLOB_API_BASE.to_string(),
+            // Use helper function to support env var override (POLYMARKET_CLOB_URL)
+            base_url: clob_api_url(),
             timeout: Duration::from_secs(30),
             rate_limit_per_second: 5,
             user_agent: "polymarket-sdk/0.1.0".to_string(),
@@ -79,29 +80,50 @@ impl Default for ClobConfig {
 }
 
 impl ClobConfig {
-    /// Create config from environment variables
+    /// Create a new configuration builder with defaults.
     #[must_use]
+    pub fn builder() -> Self {
+        Self::default()
+    }
+
+    /// Create config from environment variables.
+    ///
+    /// **Deprecated**: Use `ClobConfig::default()` instead.
+    /// The default implementation already supports `POLYMARKET_CLOB_URL` env var override.
+    #[must_use]
+    #[deprecated(
+        since = "0.1.0",
+        note = "Use ClobConfig::default() instead. URL override via POLYMARKET_CLOB_URL env var is already supported."
+    )]
     pub fn from_env() -> Self {
-        Self {
-            base_url: clob_api_url(),
-            timeout: std::env::var("POLYMARKET_CLOB_TIMEOUT")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .map(Duration::from_secs)
-                .unwrap_or(Duration::from_secs(30)),
-            rate_limit_per_second: std::env::var("POLYMARKET_CLOB_RATE_LIMIT")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(5),
-            user_agent: std::env::var("POLYMARKET_CLOB_USER_AGENT")
-                .unwrap_or_else(|_| "polymarket-sdk/0.1.0".to_string()),
-        }
+        Self::default()
     }
 
     /// Set base URL
     #[must_use]
     pub fn with_base_url(mut self, url: impl Into<String>) -> Self {
         self.base_url = url.into();
+        self
+    }
+
+    /// Set request timeout
+    #[must_use]
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    /// Set rate limit (requests per second)
+    #[must_use]
+    pub fn with_rate_limit(mut self, rate_limit: u32) -> Self {
+        self.rate_limit_per_second = rate_limit;
+        self
+    }
+
+    /// Set user agent string
+    #[must_use]
+    pub fn with_user_agent(mut self, user_agent: impl Into<String>) -> Self {
+        self.user_agent = user_agent.into();
         self
     }
 }
@@ -264,7 +286,14 @@ impl ClobClient {
         })
     }
 
-    /// Create client from environment variables
+    /// Create client from environment variables.
+    ///
+    /// **Deprecated**: Use `ClobClient::new(ClobConfig::default(), signer)` instead.
+    #[deprecated(
+        since = "0.1.0",
+        note = "Use ClobClient::new(ClobConfig::default(), signer) instead"
+    )]
+    #[allow(deprecated)]
     pub fn from_env(signer: PrivateKeySigner) -> Result<Self> {
         Self::new(ClobConfig::from_env(), signer)
     }
@@ -1015,7 +1044,8 @@ mod tests {
     #[test]
     fn test_clob_config_default() {
         let config = ClobConfig::default();
-        assert_eq!(config.base_url, CLOB_API_BASE);
+        // URL uses helper function which may be overridden by env var
+        assert_eq!(config.base_url, clob_api_url());
         assert_eq!(config.timeout, Duration::from_secs(30));
         assert_eq!(config.rate_limit_per_second, 5);
     }

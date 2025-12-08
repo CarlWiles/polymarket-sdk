@@ -41,7 +41,7 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use tracing::{debug, info, instrument, warn};
 
-use crate::core::{data_api_url, relayer_api_url, DATA_API_BASE, RELAYER_API_BASE};
+use crate::core::{data_api_url, relayer_api_url};
 use crate::core::{PolymarketError, Result};
 
 type RateLimiter = GovRateLimiter<
@@ -1000,8 +1000,9 @@ pub struct RelayerConfig {
 impl Default for RelayerConfig {
     fn default() -> Self {
         Self {
-            base_url: RELAYER_API_BASE.to_string(),
-            data_api_base_url: DATA_API_BASE.to_string(),
+            // Use helper functions to support env var overrides
+            base_url: relayer_api_url(),
+            data_api_base_url: data_api_url(),
             timeout: Duration::from_secs(60),
             rate_limit_per_second: 2,
             user_agent: "polymarket-sdk/0.1.0".to_string(),
@@ -1044,24 +1045,25 @@ impl RelayerConfig {
         self
     }
 
-    /// Create config from environment variables
+    /// Set user agent string
     #[must_use]
+    pub fn with_user_agent(mut self, user_agent: impl Into<String>) -> Self {
+        self.user_agent = user_agent.into();
+        self
+    }
+
+    /// Create config from environment variables.
+    ///
+    /// **Deprecated**: Use `RelayerConfig::default()` instead.
+    /// The default implementation already supports env var overrides.
+    #[must_use]
+    #[deprecated(
+        since = "0.1.0",
+        note = "Use RelayerConfig::default() instead. URL overrides via \
+                POLYMARKET_RELAYER_URL and POLYMARKET_DATA_URL env vars are already supported."
+    )]
     pub fn from_env() -> Self {
-        Self {
-            base_url: relayer_api_url(),
-            data_api_base_url: data_api_url(),
-            timeout: std::env::var("POLYMARKET_RELAYER_TIMEOUT")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .map(Duration::from_secs)
-                .unwrap_or(Duration::from_secs(60)),
-            rate_limit_per_second: std::env::var("POLYMARKET_RELAYER_RATE_LIMIT")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(2),
-            user_agent: std::env::var("POLYMARKET_RELAYER_USER_AGENT")
-                .unwrap_or_else(|_| "polymarket-sdk/0.1.0".to_string()),
-        }
+        Self::default()
     }
 }
 
@@ -1128,7 +1130,11 @@ impl RelayerClient {
         Self::new(RelayerConfig::default())
     }
 
-    /// Create client from environment variables
+    /// Create client from environment variables.
+    ///
+    /// **Deprecated**: Use `RelayerClient::with_defaults()` instead.
+    #[deprecated(since = "0.1.0", note = "Use RelayerClient::with_defaults() instead")]
+    #[allow(deprecated)]
     pub fn from_env() -> Result<Self> {
         Self::new(RelayerConfig::from_env())
     }
