@@ -55,7 +55,7 @@ use tokio_tungstenite::{
     connect_async,
     tungstenite::{Error as WsError, Message},
 };
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::core::{rtds_wss_url, RTDS_WSS_BASE};
 use crate::core::{PolymarketError, Result, StreamErrorKind};
@@ -900,16 +900,18 @@ pub enum RtdsEvent {
 /// Raw message from RTDS WebSocket
 #[derive(Debug, Clone, Deserialize)]
 pub struct RtdsMessage {
-    /// Topic name
-    pub topic: String,
+    /// Topic name (may be absent in some message types like subscribed confirmation)
+    #[serde(default)]
+    pub topic: Option<String>,
     /// Message type (trades, orders_matched, etc.)
-    #[serde(rename = "type")]
+    #[serde(rename = "type", default)]
     pub msg_type: String,
     /// Server timestamp
     pub timestamp: Option<i64>,
     /// Connection ID
     pub connection_id: Option<String>,
-    /// Message payload
+    /// Message payload (may be absent in control messages)
+    #[serde(default)]
     pub payload: Value,
 }
 
@@ -1215,6 +1217,12 @@ impl RtdsClient {
         let sub_msg =
             RtdsSubscriptionMessage::new(&config.topic, &config.msg_type, config.filters.clone());
         let sub_json = serde_json::to_string(&sub_msg)?;
+
+        info!(
+            subscription_message = %sub_json,
+            "Sending RTDS subscription"
+        );
+
         write
             .send(Message::Text(sub_json.into()))
             .await
@@ -1233,7 +1241,7 @@ impl RtdsClient {
         loop {
             tokio::select! {
                 _ = ping_interval.tick() => {
-                    debug!("Sending RTDS ping");
+                    // Send ping silently (no log needed for routine keepalive)
                     if let Err(e) = write.send(Message::Ping(vec![].into())).await {
                         error!(?e, "Failed to send ping");
                         return Err(PolymarketError::stream(
@@ -1248,7 +1256,7 @@ impl RtdsClient {
                             Self::handle_message(&text, event_tx).await;
                         }
                         Some(Ok(Message::Pong(_))) => {
-                            debug!("Received RTDS pong");
+                            // Pong received, connection is alive (no log needed)
                         }
                         Some(Ok(Message::Close(frame))) => {
                             info!(?frame, "RTDS connection closed by server");
@@ -1277,15 +1285,30 @@ impl RtdsClient {
 
     /// Handle incoming RTDS message
     async fn handle_message(text: &str, event_tx: &mpsc::Sender<RtdsEvent>) {
+        // Skip empty messages (e.g., heartbeat acknowledgments)
+        if text.is_empty() || text.trim().is_empty() {
+            return;
+        }
+
         let message: RtdsMessage = match serde_json::from_str(text) {
             Ok(m) => m,
             Err(e) => {
-                warn!(?e, "Failed to parse RTDS message");
+                // Only warn for non-empty messages that fail to parse
+                warn!(?e, text_len = text.len(), "Failed to parse RTDS message");
                 return;
             }
         };
 
-        if message.msg_type == "trades" {
+        // Trace log for debugging - only visible with RUST_LOG=trace
+        trace!(
+            msg_type = %message.msg_type,
+            topic = ?message.topic,
+            payload_preview = %format!("{:.200}", message.payload.to_string()),
+            "RTDS message received"
+        );
+
+        // Match both "trades" and "trade" message types (Polymarket may use either)
+        if message.msg_type == "trades" || message.msg_type == "trade" {
             let payload: TradePayload = match serde_json::from_value(message.payload.clone()) {
                 Ok(p) => p,
                 Err(e) => {
@@ -1293,6 +1316,23 @@ impl RtdsClient {
                     return;
                 }
             };
+
+            // Full structured output at debug level (RUST_LOG=polymarket_sdk=debug)
+            debug!(
+                proxy_wallet = ?payload.proxy_wallet,
+                pseudonym = ?payload.pseudonym,
+                side = ?payload.side,
+                outcome = ?payload.outcome,
+                size = ?payload.size,
+                price = ?payload.price,
+                title = ?payload.title,
+                asset = ?payload.asset,
+                condition_id = ?payload.condition_id,
+                transaction_hash = ?payload.transaction_hash,
+                timestamp = ?payload.timestamp,
+                event_title = ?payload.event_title,
+                "TradePayload received"
+            );
 
             if payload.is_valid() {
                 let _ = event_tx.send(RtdsEvent::Trade(payload)).await;
