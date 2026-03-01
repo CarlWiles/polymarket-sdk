@@ -746,7 +746,7 @@ impl ClobClient {
     ///
     /// Requires API credentials to be set via `with_api_credentials`.
     #[instrument(skip(self, order))]
-    pub async fn submit_order(&self, order: &SignedOrderRequest) -> Result<OrderResponse> {
+    pub async fn submit_order(&self, order: &SignedOrderRequest, post_only: bool) -> Result<OrderResponse> {
         use crate::types::{NewOrder, OrderType};
 
         self.wait_for_rate_limit().await;
@@ -762,7 +762,7 @@ impl ClobClient {
         // - Use api_key as owner (NOT wallet address) - matches TypeScript SDK behavior
         // - Wrap order data in nested structure with orderType and deferExec
         let new_order =
-            NewOrder::from_signed_order(order, &api_creds.api_key, OrderType::GTC, false);
+            NewOrder::from_signed_order(order, &api_creds.api_key, OrderType::GTC, false, post_only);
 
         // CRITICAL FIX: Serialize JSON ONCE and reuse for all operations
         // This ensures L2 HMAC, Builder HMAC, and HTTP body all use identical JSON

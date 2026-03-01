@@ -122,7 +122,7 @@ fn show_concepts_only() {
     println!();
     println!("5. Key Methods:");
     println!("   - clob.get_open_orders()");
-    println!("   - clob.submit_order(&signed_order)");
+    println!("   - clob.submit_order(&signed_order, post_only)");
     println!("   - clob.cancel_orders(order_ids)");
     println!("   - clob.cancel_all_orders()");
     println!();

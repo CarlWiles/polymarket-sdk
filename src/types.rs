@@ -274,6 +274,8 @@ pub struct NewOrder {
     pub owner: String,
     /// Order type (GTC, FOK, etc.)
     pub order_type: OrderType,
+
+    pub post_only: bool,
 }
 
 /// NewOrderData contains the actual order fields
@@ -318,6 +320,7 @@ impl NewOrder {
         api_key: &str,
         order_type: OrderType,
         defer_exec: bool,
+        post_only: bool
     ) -> Self {
         NewOrder {
             defer_exec,
@@ -339,6 +342,7 @@ impl NewOrder {
             },
             owner: api_key.to_string(),
             order_type,
+            post_only,
         }
     }
 }
